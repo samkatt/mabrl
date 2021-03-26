@@ -1,16 +1,12 @@
 """Console script for mabrl."""
-import argparse
 import sys
+
+from mabrl.example_experiment import main as main_experiments
 
 
 def main():
     """Console script for mabrl."""
-    parser = argparse.ArgumentParser()
-    parser.add_argument("_", nargs="*")
-    args = parser.parse_args()
-
-    print("Arguments: " + str(args._))
-    print("Replace this message by putting your code into " "mabrl.cli.main")
+    main_experiments()
     return 0
 
 
