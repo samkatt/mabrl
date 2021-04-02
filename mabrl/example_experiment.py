@@ -1,28 +1,20 @@
 import logging
 from collections import deque
 from copy import deepcopy
-from functools import partial
 from typing import Any, Callable, Dict, List, Tuple
 
-import general_bayes_adaptive_pomdps.pytorch_api
 import numpy as np
 import online_pomdp_planning.types as planner_types
 import pomdp_belief_tracking.types as belief_types
-from general_bayes_adaptive_pomdps.agents.neural_networks.neural_pomdps import (
-    DynamicsModel,
-)
-from general_bayes_adaptive_pomdps.agents.planning.pouct import random_policy
-from general_bayes_adaptive_pomdps.domains import (
-    EncodeType,
-    create_environment,
-    create_prior,
-)
-from general_bayes_adaptive_pomdps.environments import Environment, Simulator
-from general_bayes_adaptive_pomdps.models.baddr import (
+from general_bayes_adaptive_pomdps.baddr.model import (
     BADDr,
+    DynamicsModel,
     create_transition_sampler,
     train_from_samples,
 )
+from general_bayes_adaptive_pomdps.baddr.pytorch_api import set_device
+from general_bayes_adaptive_pomdps.core import Domain
+from general_bayes_adaptive_pomdps.domains import create_domain, create_prior
 from online_pomdp_planning.mcts import Policy
 from online_pomdp_planning.mcts import create_POUCT as lib_create_POUCT
 from online_pomdp_planning.mcts import create_rollout as lib_create_rollout
@@ -48,27 +40,28 @@ def main() -> None:
     planning_horizon = 5
 
     # learning parameters
+    optimizer = "SGD"
+    num_nets = 8
     learning_rate = 0.1
     online_learning_rate = 0.01
     num_epochs = 1024
     batch_size = 32
+    network_size = 32
 
     prior_certainty = 1000
     prior_correctness = 0.1
 
     # TODO: improve API: give device to `BADDr`
-    general_bayes_adaptive_pomdps.pytorch_api.set_device(use_gpu=False)
+    set_device(use_gpu=False)
 
     # setup
-    env = create_environment(
+    env = create_domain(
         "tiger",
         0,
-        EncodeType.DEFAULT,
+        use_one_hot_encoding=True,
     )
-    assert isinstance(env, Simulator)
 
-    # TODO: fill in when GBA-POMDP is updated
-    baddr = BADDr(env, ...)
+    baddr = BADDr(env, num_nets, optimizer, learning_rate, network_size, batch_size)
 
     planner = create_planner(
         baddr,
@@ -154,7 +147,7 @@ def create_train_method(
         0,
         prior_certainty,
         prior_correctness,
-        EncodeType.DEFAULT,
+        use_one_hot_encoding=True,
     ).sample
 
     def train_method(net: DynamicsModel):
@@ -167,7 +160,7 @@ def create_train_method(
 
 
 def run_episode(
-    env: Environment,
+    env: Domain,
     planner: planner_types.Planner,
     belief: belief_types.Belief,
     horizon: int,
@@ -235,7 +228,8 @@ def create_planner(
 ) -> planner_types.Planner:
     """The factory function for planners
 
-    Currently just returns PO-UCT with given parameters, but allows for future generalization
+    Currently just returns PO-UCT with given parameters, but allows for future
+    generalization
 
     Real `env` is used for the rollout policy
 
@@ -247,7 +241,7 @@ def create_planner(
     :param discount: the discount factor to plan for
     """
 
-    actions = list(np.int64(i) for i in range(baddr.action_space.n))
+    actions = list(i for i in range(baddr.action_space.n))
     online_planning_sim = SimForPlanning(baddr)
 
     rollout = lib_create_rollout(
@@ -351,21 +345,17 @@ class SimForPlanning(planner_types.Simulator):
         return next_s, obs.data.tobytes(), reward, terminal
 
 
-def create_rollout_policy(domain: Simulator) -> Policy:
+def create_rollout_policy(domain: Domain) -> Policy:
     """returns a random policy
-
-    TODO: move to separate file for planners
 
     Currently only supported by grid-verse environment:
         - "default" -- default "informed" rollout policy
         - "gridverse-extra" -- straight if possible, otherwise turn
 
-    :param domain: environment
+    :param domain: true POMDP
     """
 
-    pol = partial(random_policy, action_space=domain.action_space)
-
-    def rollout(augmented_state: BADDr.AugmentedState) -> int:
+    def rollout(_: BADDr.AugmentedState) -> int:
         """
         So normally PO-UCT expects states to be numpy arrays and everything is
         dandy, but we are planning in augmented space here in secret. So the
@@ -376,6 +366,6 @@ def create_rollout_policy(domain: Simulator) -> Policy:
         :param augmented_state:
         :return: action to take during rollout
         """
-        return pol(augmented_state.domain_state)
+        return domain.action_space.sample_as_int()
 
     return RolloutPolicyForPlanning(rollout)
