@@ -12,7 +12,7 @@ from general_bayes_adaptive_pomdps.baddr.model import (
     create_transition_sampler,
     train_from_samples,
 )
-from general_bayes_adaptive_pomdps.baddr.pytorch_api import set_device
+from general_bayes_adaptive_pomdps.baddr.neural_networks.pytorch_api import set_device
 from general_bayes_adaptive_pomdps.core import Domain
 from general_bayes_adaptive_pomdps.domains import create_domain, create_prior
 from online_pomdp_planning.mcts import Policy

@@ -50,7 +50,8 @@ clean-test: ## remove test and coverage artifacts
 lint: ## check style with flake8
 	flake8 mabrl tests
 
-format: ## check style with flake8
+format: ## format code with isort and black
+	isort mabrl tests
 	black mabrl tests
 
 test: ## run tests quickly with the default Python
