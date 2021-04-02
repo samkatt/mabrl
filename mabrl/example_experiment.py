@@ -28,8 +28,8 @@ def main() -> None:
     logger = logging.getLogger("MABRL")
 
     # experiment parameters
-    runs = 1
-    episodes = 100
+    runs = 2
+    episodes = 5
     horizon = 10
     discount = 0.95
 
@@ -41,10 +41,10 @@ def main() -> None:
 
     # learning parameters
     optimizer = "SGD"
-    num_nets = 8
+    num_nets = 2
     learning_rate = 0.1
     online_learning_rate = 0.01
-    num_epochs = 1024
+    num_epochs = 512
     batch_size = 32
     network_size = 32
 
