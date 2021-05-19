@@ -1,25 +1,28 @@
 import logging
 from collections import deque
-from copy import deepcopy
-from typing import Any, Callable, Dict, List, Tuple
+from functools import partial
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import online_pomdp_planning.types as planner_types
 import pomdp_belief_tracking.types as belief_types
 from general_bayes_adaptive_pomdps.baddr.model import (
     BADDr,
+    BADDrState,
     DynamicsModel,
-    create_transition_sampler,
+    backprop_update,
+    create_dynamics_model,
+    sample_transitions_uniform,
     train_from_samples,
 )
-from general_bayes_adaptive_pomdps.baddr.neural_networks.pytorch_api import set_device
-from general_bayes_adaptive_pomdps.core import Domain
-from general_bayes_adaptive_pomdps.domains import create_domain, create_prior
+from general_bayes_adaptive_pomdps.core import ActionSpace
+from general_bayes_adaptive_pomdps.domains import Domain
 from online_pomdp_planning.mcts import Policy
 from online_pomdp_planning.mcts import create_POUCT as lib_create_POUCT
 from online_pomdp_planning.mcts import create_rollout as lib_create_rollout
 from pomdp_belief_tracking.pf import particle_filter as PF
 from pomdp_belief_tracking.pf import rejection_sampling as RS
+from mabrl.tiger3 import Tiger3
 
 
 def main() -> None:
@@ -47,25 +50,61 @@ def main() -> None:
     num_epochs = 512
     batch_size = 32
     network_size = 32
+    dropout_rate = 0.1
 
-    prior_certainty = 1000
-    prior_correctness = 0.1
-
-    # TODO: improve API: give device to `BADDr`
-    set_device(use_gpu=False)
+    model_updates = [
+        partial(
+            backprop_update,
+            freeze_model_setting=DynamicsModel.FreezeModelSetting.FREEZE_NONE,
+        )
+    ]
 
     # setup
-    env = create_domain(
-        "tiger",
-        0,
-        use_one_hot_encoding=True,
+    env = Tiger3()
+
+    models = [
+        create_dynamics_model(
+            env.state_space,
+            env.action_space,
+            env.observation_space,
+            optimizer,
+            learning_rate,
+            network_size,
+            batch_size,
+            dropout_rate,
+        )
+        for _ in range(num_nets)
+    ]
+
+    sampler = partial(
+        sample_transitions_uniform,
+        env.state_space,
+        env.action_space,
+        env.simulation_step,
     )
 
-    baddr = BADDr(env, num_nets, optimizer, learning_rate, network_size, batch_size)
+    for model in models:
+        train_from_samples(
+            model,
+            sampler,
+            num_epochs=num_epochs,
+            batch_size=batch_size,
+        )
+        model.set_learning_rate(online_learning_rate)
+
+    baddr = BADDr(
+        env.action_space,
+        env.observation_space,
+        env.sample_start_state,
+        env.reward,
+        env.terminal,
+        models,
+        model_updates,
+    )
 
     planner = create_planner(
         baddr,
-        create_rollout_policy(env),
+        RandomPlicy(env.action_space),
         num_sims,
         exploration_constant,
         planning_horizon,
@@ -74,19 +113,14 @@ def main() -> None:
     belief = belief_types.Belief(
         baddr.sample_start_state, create_rejection_sampling(baddr, num_particles)
     )
-    train_method = create_train_method(
-        prior_certainty, prior_correctness, num_epochs, batch_size
-    )
 
-    def set_domain_state(s: BADDr.AugmentedState):
-        """sets domain state in ``s`` to sampled initial state """
-        return BADDr.AugmentedState(baddr.sample_domain_start_state(), s.model)
+    def set_domain_state(s: BADDrState):
+        """sets domain state in ``s`` to sampled initial state"""
+        return BADDrState(baddr.sample_domain_start_state(), s.model)
 
     output: List[Dict[str, Any]] = []
 
     for run in range(runs):
-
-        baddr.reset(train_method, learning_rate, online_learning_rate)
 
         avg_recent_return = deque([], 50)
 
@@ -124,39 +158,6 @@ def main() -> None:
                 f"run {run+1}/{runs} episode {episode+1}/{episodes}: "
                 f"avg return: {np.mean(avg_recent_return)}"
             )
-
-
-def create_train_method(
-    prior_certainty, prior_correctness, num_epochs, batch_size
-) -> Callable[[DynamicsModel], None]:
-    """creates a model training method
-
-    This returns a function that can be called on any `DynamicsModel` net to be
-    trained
-
-    :param env:
-    :param prior_certainty:
-    :param prior_correctness:
-    :param num_epochs:
-    :param batch_size:
-    """
-    logger = logging.getLogger("train method")
-
-    sim_sampler = create_prior(
-        "tiger",
-        0,
-        prior_certainty,
-        prior_correctness,
-        use_one_hot_encoding=True,
-    ).sample
-
-    def train_method(net: DynamicsModel):
-        sim = sim_sampler()
-        logger.debug("Training network on %s", sim)
-        sampler = create_transition_sampler(sim)
-        train_from_samples(net, sampler, num_epochs, batch_size)
-
-    return train_method
 
 
 def run_episode(
@@ -275,46 +276,21 @@ def create_rejection_sampling(
     """
 
     def process_acpt(ss, ctx, _):
-        # update the parameters of the augmented state
-        copy = deepcopy(ss)
-        baddr.update_theta(
-            copy.model,
-            ctx["state"].domain_state,
+        return baddr.model_simulation_step(
+            ss,
+            ctx["state"],
             ctx["action"],
-            copy.domain_state,
+            ss,
             ctx["observation"],
         )
-        return copy
 
-    def belief_sim(s: BADDr.AugmentedState, a: int) -> Tuple[np.ndarray, np.ndarray]:
-        out = baddr.simulation_step_without_updating_theta(s, a)
+    def belief_sim(s: BADDrState, a: int) -> Tuple[BADDrState, np.ndarray]:
+        out = baddr.domain_simulation_step(s, a)
         return out.state, out.observation
 
     return RS.create_rejection_sampling(
         belief_sim, num_samples, np.array_equal, process_acpt  # type: ignore
     )
-
-
-class RolloutPolicyForPlanning(Policy):
-    """A policy for ``online_pomdp_planning`` from ``general_bayes_adaptive_pomdps`` policies"""
-
-    def __init__(self, pol: Callable[[BADDr.AugmentedState], int]):
-        """Wraps and calls ``pol`` with imposed signature
-
-        :param pol:
-        """
-        super().__init__()
-        self._rollout_pol = pol
-
-    def __call__(self, s: BADDr.AugmentedState, _: np.ndarray) -> int:
-        """The signature for the policy for online planning
-
-        A stochastic mapping from state and observation to action
-
-        :param s: the state
-        :param _: the observation, ignored
-        """
-        return self._rollout_pol(s)
 
 
 class SimForPlanning(planner_types.Simulator):
@@ -328,9 +304,7 @@ class SimForPlanning(planner_types.Simulator):
         super().__init__()
         self._bnrl_sim = bnrl_simulator
 
-    def __call__(
-        self, s: BADDr.AugmentedState, a: int
-    ) -> Tuple[np.ndarray, np.ndarray, float, bool]:
+    def __call__(self, s: BADDrState, a: int) -> Tuple[np.ndarray, bytes, float, bool]:
         """The signature for the simulator for online planning
 
         Upon calling, produces a transition (state, observation, reward, terminal)
@@ -338,34 +312,19 @@ class SimForPlanning(planner_types.Simulator):
         :param s: input state
         :param a: input action
         """
-        next_s, obs = self._bnrl_sim.simulation_step_without_updating_theta(s, a)
+        next_s, obs = self._bnrl_sim.domain_simulation_step(s, a)
         reward = self._bnrl_sim.reward(s, a, next_s)
         terminal = self._bnrl_sim.terminal(s, a, next_s)
 
         return next_s, obs.data.tobytes(), reward, terminal
 
 
-def create_rollout_policy(domain: Domain) -> Policy:
-    """returns a random policy
+class RandomPlicy:
+    """A random :mod:`online_pomdp_planning.mcts.Policy` given an action space"""
 
-    Currently only supported by grid-verse environment:
-        - "default" -- default "informed" rollout policy
-        - "gridverse-extra" -- straight if possible, otherwise turn
+    def __init__(self, A: ActionSpace):
+        self.A = A
 
-    :param domain: true POMDP
-    """
-
-    def rollout(_: BADDr.AugmentedState) -> int:
-        """
-        So normally PO-UCT expects states to be numpy arrays and everything is
-        dandy, but we are planning in augmented space here in secret. So the
-        typical rollout policy of the environment will not work: it does not
-        expect an `AugmentedState`. So here we gently provide it the underlying
-        state and all is well
-
-        :param augmented_state:
-        :return: action to take during rollout
-        """
-        return domain.action_space.sample_as_int()
-
-    return RolloutPolicyForPlanning(rollout)
+    def __call__(self, _, __) -> int:
+        """Adopts interface of :class:`online_pomdp_planning.mcts.Policy`"""
+        return self.A.sample_as_int()
