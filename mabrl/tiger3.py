@@ -45,7 +45,7 @@ class Tiger3(domain.Domain):
 
     def __init__(
         self,
-        one_hot_encode_observation: bool = ,
+        one_hot_encode_observation: bool = 1,
         correct_obs_probs: Optional[List[float]] = None,
     ):
         """Construct the tiger domain
