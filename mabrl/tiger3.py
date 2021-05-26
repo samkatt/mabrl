@@ -183,6 +183,7 @@ class Tiger3(domain.Domain):
             return self.LISTEN
         
         
+        # XXX: sitll assumes only two states and only two observations
         return (
             loc if np.random.random() < self._correct_obs_probs[loc] else int(not loc)
         )
