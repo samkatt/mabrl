@@ -23,7 +23,7 @@ from online_pomdp_planning.mcts import create_rollout as lib_create_rollout
 from pomdp_belief_tracking.pf import particle_filter as PF
 from pomdp_belief_tracking.pf import rejection_sampling as RS
 from mabrl.tiger3 import Tiger3
-
+from mabrl.RealDomain import RealDomain
 
 def main() -> None:
     """runs PO-UCT planner with a belief on BADDr"""
@@ -33,23 +33,29 @@ def main() -> None:
     # experiment parameters
     runs = 2
     episodes = 5
-    horizon = 10
+    horizon = 80
     discount = 0.95
 
     # planning parameters
     num_particles = 128
-    num_sims = 1024
-    exploration_constant = 100
-    planning_horizon = 5
+    #num_sims = 1024
+    num_sims = 2048
+    #exploration_constant = 100
+    exploration_constant = 200
+    #planning_horizon = 5
+    planning_horizon = 30
 
     # learning parameters
     optimizer = "SGD"
     num_nets = 2
     learning_rate = 0.1
     online_learning_rate = 0.01
-    num_epochs = 512
-    batch_size = 32
-    network_size = 32
+    #num_epochs = 512
+    num_epochs = 1024
+    #batch_size = 32
+    batch_size = 64
+    #network_size = 32
+    network_size = 64
     dropout_rate = 0.1
 
     model_updates = [
@@ -60,7 +66,7 @@ def main() -> None:
     ]
 
     # setup
-    env = Tiger3()
+    env = RealDomain()
 
     models = [
         create_dynamics_model(

@@ -27,7 +27,7 @@ class RealDomain(domain.Domain):
     # robot location
     ELEM_TO_STRING = ["on the table", "with the robot", "delivered to the workroom"]
     # robot action
-    ACTION_TO_STRING = ["Go-to-WorkRoom","Go-to-ToolRoom","Pick-up","Listen"]
+    ACTION_TO_STRING = ["Go-to-WorkRoom","Go-to-ToolRoom","Pick-up","Listen", "Drop"]
     
     # might add sth else
     LISTEN_REWARD = -1
@@ -72,12 +72,12 @@ class RealDomain(domain.Domain):
         # action在此处domain有四个动作，去workroom，去tool room，捡拾工具，listen
         # there are four actions, go-to-workroom, go-to-toolroom, pick-up, listen
         # if we set listen values as 4 or 5, then error happens. I think if we want to add more acitons, then we have to keep LISTEN == 3
-        self._action_space = ActionSpace(4)
+        self._action_space = ActionSpace(5)
         # 查明encode observation的作用
         # 此处仅仅观察human working status
         # human status has 5 values 0 1 2 3 4, plus one null value should be 6
         # 但是包含None,故空间大小为2
-        
+        # only observe the human workig status
         self._obs_space = DiscreteSpace([6])
         # 采样出事状态
         self._state = self.sample_start_state()
@@ -107,7 +107,7 @@ class RealDomain(domain.Domain):
         for i in range(2,6):
             assert 3 > state[i] >= 0, f"{state} not valid"
             
-        
+        print("initial state: ",state)
         self._state = state
         
     @property
@@ -155,7 +155,7 @@ class RealDomain(domain.Domain):
              listening: (`bool`): whether the agent is listening
         RETURNS (`int`): the observation: 0 = left, 1 = right, 2 = null
         """
-        # huamn working status: 0 1 2 3 4
+        # huamn working status: 0 1 2 3 4 + Null
         if not listening:
             # string, bytes like or a number
             return False
@@ -195,34 +195,52 @@ class RealDomain(domain.Domain):
             
         # to illustrate the effect of the action to the new state
         # [0 1 2 2 2 2]
-            if action == 0:
-                new_state[0] = 0
-            if action == 1:
-                new_state[0] = 1
-            if action != 0 and action != 1:
-                for i in range(2,6):
-                    # only pick one tool a time
+        if action == 0:
+            new_state[0] = 0
+        if action == 1:
+            new_state[0] = 1
+        if action == 2:
+            if state[0] == 0:
+                for i in range(2, 6):
+                # only pick one tool a time
                     if new_state[i] == 0:
                         new_state[i] = 1
                         break
+            else:
+                for i in range(2, 6):
+                # only pick one tool a time
+                    if new_state[i] == 2:
+                        new_state[i] = 1
+                        break
+        
+        # drop
+        if action == 4:
+            if state[0] == 1:
+                for i in range(2, 6):
+                # only drop one tool a time
+                    if new_state[i] == 1:
+                        new_state[i] = 2
+                        break
+            else:
+                for i in range(2, 6):
+                # only drop one tool a time
+                    if new_state[i] == 1:
+                        new_state[i] = 0
+                        break
+        
+        
             
         # here we can set a probability to change the human's current working status
         # 0 1 2 3 4 -> loc + status + [1 2 3 4]
-XXXX if we use this then episodes always 0
         a = new_state[1]
-        while new_state[1] < 4:
-            if new_state[a+2] == 2:
-                new_state[1] += 1
-                a += 1
-            else:
-                break
+        if new_state[1] < 4 and new_state[a+2] == 2:
+            new_state[1] += 1
+            a += 1
+
         
         return SimulationResult(new_state, self.encode_observation(obs))
     
-    # reward
-    # 开门对错有奖励
-XXXX if we delete the input of action like we just use "def reward(self, state: np.ndarray, new_state: np.ndarray) -> float"
-XXXX then the error happens
+# reward
 # here for the reward, we just focus on the human working status changes and the time interval between changes
 # my episodes is to reduce some interval values as the punishment
     
@@ -234,6 +252,7 @@ XXXX then the error happens
              new_state: (`np.ndarray`):
         RETURNS (`float`):
         """
+        #print("old state: ",state)
         # here we need to focus on the change of the human status between new state and old state
         # we just need to focus on the human assembling task this time.
         assert self.state_space.contains(state), f"{state} not in space"
@@ -242,8 +261,8 @@ XXXX then the error happens
         
         # Or we can Just add something like gaussian sampling here
         # then there are values < 0 appears
-        
-        return (self.GOOD_DOOR_REWARD - np.random.randint(5,20)) * (new_state[1]-state[1])
+        #print("new state: ",new_state)
+        return (self.GOOD_DOOR_REWARD) * (new_state[1]-state[1])
     
     # 中止指令
     def terminal(self, state: np.ndarray, action: int, new_state: np.ndarray) -> bool:
@@ -305,7 +324,6 @@ XXXX then the error happens
             observation
         ), f"{observation} not in space"
         
-
         return observation
 
     
