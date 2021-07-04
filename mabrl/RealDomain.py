@@ -23,7 +23,11 @@ class RealDomain(domain.Domain):
     # We don't use one hot encode observation here
     # we set the termianl step here
     terminal_step = 150
+    GOTOWORKROOM = 0
+    GOTOTOOLROOM = 1
+    PICK = 2
     LISTEN = 3
+    DROP = 4
     # robot location
     ELEM_TO_STRING = ["on the table", "with the robot", "delivered to the workroom"]
     # robot action
@@ -195,11 +199,11 @@ class RealDomain(domain.Domain):
             
         # to illustrate the effect of the action to the new state
         # [0 1 2 2 2 2]
-        if action == 0:
+        if action == self.GOTOWORKROOM:
             new_state[0] = 0
-        if action == 1:
+        if action == self.GOTOTOOLROOM:
             new_state[0] = 1
-        if action == 2:
+        if action == self.PICK:
             if state[0] == 0:
                 for i in range(2, 6):
                 # only pick one tool a time
@@ -214,7 +218,7 @@ class RealDomain(domain.Domain):
                         break
         
         # drop
-        if action == 4:
+        if action == self.DROP:
             if state[0] == 1:
                 for i in range(2, 6):
                 # only drop one tool a time
