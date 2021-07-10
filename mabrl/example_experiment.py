@@ -24,6 +24,8 @@ from pomdp_belief_tracking.pf import particle_filter as PF
 from pomdp_belief_tracking.pf import rejection_sampling as RS
 from mabrl.tiger3 import Tiger3
 from mabrl.RealDomain import RealDomain
+import matplotlib.pyplot as plt
+
 
 def main() -> None:
     """runs PO-UCT planner with a belief on BADDr"""
@@ -90,12 +92,25 @@ def main() -> None:
     )
 
     for model in models:
-        train_from_samples(
-            model,
-            sampler,
-            num_epochs=num_epochs,
-            batch_size=batch_size,
-        )
+        # print out loss
+        y = [0] * 1024
+        for _ in range(num_epochs):
+            loss = train_from_samples(
+                model,
+                sampler,
+                num_epochs=num_epochs,
+                batch_size=batch_size,
+            )
+            print("time: ", _, ", loss: ",loss)
+            y[_] += loss
+            #plt.plot(_,loss)
+            
+        #x = np.linspace(0,500,1)
+        x = np.linspace(0,1024,1024)
+        y = [i/2 for i in y]
+        plt.plot(x,y)
+        plt.show()
+        
         model.set_learning_rate(online_learning_rate)
 
     baddr = BADDr(
@@ -219,8 +234,8 @@ def run_episode(
             }
         )
 
-        if step.terminal:
-            break
+        #if step.terminal:
+        #    break
 
     return info
 

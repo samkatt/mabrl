@@ -17,12 +17,13 @@ from general_bayes_adaptive_pomdps.misc import DiscreteSpace, LogLevel
 class RealDomain(domain.Domain):
     """The actual domain"""
     # the rewards while human status completed
-    GOOD_DOOR_REWARD = 10
+    STEP_REWARD = 10
     # the initial state reward equals to 0
-    reward = 0
     # We don't use one hot encode observation here
     # we set the termianl step here
-    terminal_step = 150
+    #terminal_step = 150
+    LOC = [0, 1]
+    TOOL = [0, 1, 2]
     GOTOWORKROOM = 0
     GOTOTOOLROOM = 1
     PICK = 2
@@ -31,10 +32,10 @@ class RealDomain(domain.Domain):
     # robot location
     ELEM_TO_STRING = ["on the table", "with the robot", "delivered to the workroom"]
     # robot action
-    ACTION_TO_STRING = ["Go-to-WorkRoom","Go-to-ToolRoom","Pick-up","Listen", "Drop"]
+    ACTION_TO_STRING = ["Go-to-WorkRoom", "Go-to-ToolRoom", "Pick-up", "Listen", "Drop"]
+    # Working Status
+    STATUS_TO_STRING = ["Not Start", "First-Step", "Second-Step", "Third-Step", "Forth-Step"]
     
-    # might add sth else
-    LISTEN_REWARD = -1
     # We can thinking adding one human function to think about it.
     
     def __init__(
@@ -111,7 +112,7 @@ class RealDomain(domain.Domain):
         for i in range(2,6):
             assert 3 > state[i] >= 0, f"{state} not valid"
             
-        print("initial state: ",state)
+        #print("initial state: ",state)
         self._state = state
         
     @property
@@ -192,7 +193,7 @@ class RealDomain(domain.Domain):
         new_state = state.copy()
         # print("new state: ",new_state)
         # only when agent at workroom, then the observation can be done
-        if action == self.LISTEN and state[0] == 1:
+        if action == self.LISTEN and state[0] == self.LOC[1]:
             obs = self.sample_observation(state[1], True)
         else:  # not opening door
             obs = self.sample_observation(state[1], False)
@@ -200,36 +201,36 @@ class RealDomain(domain.Domain):
         # to illustrate the effect of the action to the new state
         # [0 1 2 2 2 2]
         if action == self.GOTOWORKROOM:
-            new_state[0] = 0
+            new_state[0] = self.LOC[0]
         if action == self.GOTOTOOLROOM:
-            new_state[0] = 1
+            new_state[0] = self.LOC[1]
         if action == self.PICK:
-            if state[0] == 0:
+            if state[0] == self.LOC[0]:
                 for i in range(2, 6):
                 # only pick one tool a time
-                    if new_state[i] == 0:
-                        new_state[i] = 1
+                    if new_state[i] == self.TOOL[0]:
+                        new_state[i] = self.TOOL[1]
                         break
             else:
                 for i in range(2, 6):
                 # only pick one tool a time
-                    if new_state[i] == 2:
-                        new_state[i] = 1
+                    if new_state[i] == self.TOOL[2]:
+                        new_state[i] = self.TOOL[1]
                         break
         
         # drop
         if action == self.DROP:
-            if state[0] == 1:
+            if state[0] == self.LOC[1]:
                 for i in range(2, 6):
                 # only drop one tool a time
-                    if new_state[i] == 1:
-                        new_state[i] = 2
+                    if new_state[i] == self.TOOL[1]:
+                        new_state[i] = self.TOOL[2]
                         break
             else:
                 for i in range(2, 6):
                 # only drop one tool a time
-                    if new_state[i] == 1:
-                        new_state[i] = 0
+                    if new_state[i] == self.TOOL[1]:
+                        new_state[i] = self.TOOL[0]
                         break
         
         
@@ -237,9 +238,10 @@ class RealDomain(domain.Domain):
         # here we can set a probability to change the human's current working status
         # 0 1 2 3 4 -> loc + status + [1 2 3 4]
         a = new_state[1]
-        if new_state[1] < 4 and new_state[a+2] == 2:
+        if new_state[1] < 4 and new_state[a+2] == self.TOOL[2]:
             new_state[1] += 1
             a += 1
+            
 
         
         return SimulationResult(new_state, self.encode_observation(obs))
@@ -266,7 +268,7 @@ class RealDomain(domain.Domain):
         # Or we can Just add something like gaussian sampling here
         # then there are values < 0 appears
         #print("new state: ",new_state)
-        return (self.GOOD_DOOR_REWARD) * (new_state[1]-state[1])
+        return (self.STEP_REWARD) * (new_state[1]-state[1])
     
     # 中止指令
     def terminal(self, state: np.ndarray, action: int, new_state: np.ndarray) -> bool:
@@ -295,6 +297,7 @@ class RealDomain(domain.Domain):
         """
         
         sim_result = self.simulation_step(self.state, action)
+        #print("Observation: ",sim_result.observation)
         reward = self.reward(self.state, action, sim_result.state)
         terminal = self.terminal(self.state, action, sim_result.state)
         # only observation not false, then we can present what it hears
@@ -302,7 +305,7 @@ class RealDomain(domain.Domain):
             if action == self.LISTEN and sim_result.observation != False:
                 descr = (
                     "the agent hears "
-                    + self.ELEM_TO_STRING[self.obs2index(sim_result.observation)]
+                    + self.STATUS_TO_STRING[self.obs2index(sim_result.observation)]
                 )
             else:  # agent is opening door
                 descr = f"the agent takes {self.ACTION_TO_STRING[action]} ({reward})"
@@ -311,7 +314,6 @@ class RealDomain(domain.Domain):
                 LogLevel.V2.value,
                 f"With agent {self.ELEM_TO_STRING[self.state[0]]}, {descr}",
             )
-            
         self.state = sim_result.state
         
         return DomainStepResult(sim_result.observation, reward, terminal)
@@ -328,7 +330,7 @@ class RealDomain(domain.Domain):
             observation
         ), f"{observation} not in space"
         
-        return observation
+        return int(observation.tolist()[0])
 
     
     def __repr__(self) -> str:
