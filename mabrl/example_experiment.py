@@ -1,36 +1,31 @@
 import logging
 from collections import deque
-from functools import partial
 from typing import Any, Dict, List, Tuple
 
-import matplotlib.pyplot as plt
 import numpy as np
 import online_pomdp_planning.types as planner_types
 import pomdp_belief_tracking.types as belief_types
-from general_bayes_adaptive_pomdps.core import ActionSpace
+from general_bayes_adaptive_pomdps.core import ActionSpace, GeneralBAPOMDP
 from general_bayes_adaptive_pomdps.domains.domain import Domain
-from general_bayes_adaptive_pomdps.models.baddr import (
-    BADDr,
-    BADDrState,
-    DynamicsModel,
-    backprop_update,
-    create_dynamics_model,
-    sample_transitions_uniform,
-    train_from_samples,
+from general_bayes_adaptive_pomdps.domains.tiger import (
+    Tiger,
+    create_tabular_prior_counts,
+)
+from general_bayes_adaptive_pomdps.models.tabular_bapomdp import (
+    TabularBAPOMDP,
+    TBAPOMDPState,
 )
 from online_pomdp_planning.mcts import Policy
 from online_pomdp_planning.mcts import create_POUCT as lib_create_POUCT
-from online_pomdp_planning.mcts import create_rollout as lib_create_rollout
 from pomdp_belief_tracking.pf import particle_filter as PF
 from pomdp_belief_tracking.pf import rejection_sampling as RS
 
-from mabrl.RealDomain import RealDomain
-
 
 def main() -> None:
-    """runs PO-UCT planner with a belief on BADDr"""
+    """runs PO-UCT planner with a belief on a general BA-POMDP"""
 
     logger = logging.getLogger("MABRL")
+    logger.setLevel(logging.DEBUG)
 
     # experiment parameters
     runs = 2
@@ -39,7 +34,7 @@ def main() -> None:
     discount = 0.95
 
     # planning parameters
-    num_particles = 128
+    num_particles = 512
     # num_sims = 1024
     num_sims = 2048
     # exploration_constant = 100
@@ -47,84 +42,26 @@ def main() -> None:
     # planning_horizon = 5
     planning_horizon = 30
 
-    # learning parameters
-    optimizer = "SGD"
-    num_nets = 2
-    learning_rate = 0.1
-    online_learning_rate = 0.01
-    # num_epochs = 512
-    num_epochs = 1024
-    # batch_size = 32
-    batch_size = 64
-    # network_size = 32
-    network_size = 64
-    dropout_rate = 0.1
-
-    model_updates = [
-        partial(
-            backprop_update,
-            freeze_model_setting=DynamicsModel.FreezeModelSetting.FREEZE_NONE,
-        )
-    ]
+    # prior configurations
+    total_counts = 10
+    prior_correctness = 1
 
     # setup
-    env = RealDomain()
+    env = Tiger(one_hot_encode_observation=False)
+    prior_counts = create_tabular_prior_counts(prior_correctness, total_counts)
 
-    models = [
-        create_dynamics_model(
-            env.state_space,
-            env.action_space,
-            env.observation_space,
-            optimizer,
-            learning_rate,
-            network_size,
-            batch_size,
-            dropout_rate,
-        )
-        for _ in range(num_nets)
-    ]
-
-    sampler = partial(
-        sample_transitions_uniform,
+    tbapomdp = TabularBAPOMDP(
         env.state_space,
-        env.action_space,
-        env.simulation_step,
-    )
-
-    for model in models:
-        # print out loss
-        y = [0] * 1024
-        for _ in range(num_epochs):
-            loss = train_from_samples(
-                model,
-                sampler,
-                num_epochs=num_epochs,
-                batch_size=batch_size,
-            )
-            print("time: ", _, ", loss: ", loss)
-            y[_] += loss
-            # plt.plot(_,loss)
-
-        # x = np.linspace(0,500,1)
-        x = np.linspace(0, 1024, 1024)
-        y = [i / 2 for i in y]
-        plt.plot(x, y)
-        plt.show()
-
-        model.set_learning_rate(online_learning_rate)
-
-    baddr = BADDr(
         env.action_space,
         env.observation_space,
         env.sample_start_state,
         env.reward,
         env.terminal,
-        models,
-        model_updates,
+        prior_counts,
     )
 
     planner = create_planner(
-        baddr,
+        tbapomdp,
         RandomPlicy(env.action_space),
         num_sims,
         exploration_constant,
@@ -132,12 +69,12 @@ def main() -> None:
         discount,
     )
     belief = belief_types.Belief(
-        baddr.sample_start_state, create_rejection_sampling(baddr, num_particles)
+        tbapomdp.sample_start_state, create_rejection_sampling(tbapomdp, num_particles)
     )
 
-    def set_domain_state(s: BADDrState):
+    def set_domain_state(s: TBAPOMDPState):
         """sets domain state in ``s`` to sampled initial state"""
-        return BADDrState(baddr.sample_domain_start_state(), s.model)
+        return TBAPOMDPState(tbapomdp.sample_domain_start_state(), s.counts)
 
     output: List[Dict[str, Any]] = []
 
@@ -170,14 +107,18 @@ def main() -> None:
             avg_recent_return.append(discounted_return)
 
             logger.warning(
-                "Episode %s/%s return: %s",
+                "Episode %d/%d return: %f.2",
                 episode + 1,
                 episodes,
                 discounted_return,
             )
             logger.info(
-                f"run {run+1}/{runs} episode {episode+1}/{episodes}: "
-                f"avg return: {np.mean(avg_recent_return)}"
+                "run %d/%d episode %d/%d: avg return: %f.2",
+                run + 1,
+                runs,
+                episode + 1,
+                episodes,
+                np.mean(avg_recent_return),
             )
 
 
@@ -220,7 +161,7 @@ def run_episode(
 
         step = env.step(action)
 
-        logger.debug("A(%s) -> O(%s) --- r(%s)", action, step.observation, step.reward)
+        logger.warn("A(%s) -> O(%s) --- r(%s)", action, step.observation, step.reward)
 
         belief_info = belief.update(action, step.observation)
 
@@ -234,14 +175,14 @@ def run_episode(
             }
         )
 
-        # if step.terminal:
-        #    break
+        if step.terminal:
+            break
 
     return info
 
 
 def create_planner(
-    baddr: BADDr,
+    gba_pomdp: GeneralBAPOMDP,
     rollout_policy: Policy,
     num_sims: int = 500,
     exploration_constant: float = 1.0,
@@ -255,7 +196,7 @@ def create_planner(
 
     Real `env` is used for the rollout policy
 
-    :param baddr:
+    :param gba_pomdp:
     :param rollout_policy: the rollout policy
     :param num_sims: number of simulations to run
     :param exploration_constant: the UCB-constant for UCB
@@ -263,18 +204,13 @@ def create_planner(
     :param discount: the discount factor to plan for
     """
 
-    actions = list(i for i in range(baddr.action_space.n))
-    online_planning_sim = SimForPlanning(baddr)
-
-    rollout = lib_create_rollout(
-        rollout_policy, online_planning_sim, planning_horizon, discount
-    )
+    actions = list(i for i in range(gba_pomdp.action_space.n))
+    online_planning_sim = SimForPlanning(gba_pomdp)
 
     return lib_create_POUCT(
         actions,
         online_planning_sim,
         num_sims,
-        leaf_eval=rollout,
         discount_factor=discount,
         rollout_depth=planning_horizon,
         ucb_constant=exploration_constant,
@@ -282,22 +218,22 @@ def create_planner(
 
 
 def create_rejection_sampling(
-    baddr: BADDr, num_samples: int
+    gba_pomdp: GeneralBAPOMDP, num_samples: int
 ) -> belief_types.BeliefUpdate:
     """Creates a rejection-sampling belief update
 
     Returns a rejection sampling belief update that tracks ``num_samples``
-    particles in the ``baddr``. Basically glue between
+    particles in the ``gba_pomdp``. Basically glue between
     ``general_bayes_adaptive_pomdps`` and ``pomdp_belief_tracking``.
 
-    Uses ``baddr`` to simulate and reject steps.
+    Uses ``gba_pomdp`` to simulate and reject steps.
 
-    :param baddr: the GBA-POMDP to track belief for
+    :param gba_pomdp: the GBA-POMDP to track belief for
     :param num_samples: number of particles to main
     """
 
     def process_acpt(ss, ctx, _):
-        return baddr.model_simulation_step(
+        return gba_pomdp.model_simulation_step(
             ss,
             ctx["state"],
             ctx["action"],
@@ -305,8 +241,8 @@ def create_rejection_sampling(
             ctx["observation"],
         )
 
-    def belief_sim(s: BADDrState, a: int) -> Tuple[BADDrState, np.ndarray]:
-        out = baddr.domain_simulation_step(s, a)
+    def belief_sim(s: TBAPOMDPState, a: int) -> Tuple[TBAPOMDPState, np.ndarray]:
+        out = gba_pomdp.domain_simulation_step(s, a)
         return out.state, out.observation
 
     return RS.create_rejection_sampling(
@@ -317,7 +253,7 @@ def create_rejection_sampling(
 class SimForPlanning(planner_types.Simulator):
     """A simulator for ``online_pomdp_planning`` from ``general_bayes_adaptive_pomdps``"""
 
-    def __init__(self, bnrl_simulator: BADDr):
+    def __init__(self, bnrl_simulator: GeneralBAPOMDP):
         """Wraps and calls ``bnrl_simulator`` with imposed signature
 
         :param bnrl_simulator:
@@ -325,7 +261,7 @@ class SimForPlanning(planner_types.Simulator):
         super().__init__()
         self._bnrl_sim = bnrl_simulator
 
-    def __call__(self, s: BADDrState, a: int) -> Tuple[np.ndarray, bytes, float, bool]:
+    def __call__(self, s, a: int) -> Tuple[np.ndarray, bytes, float, bool]:
         """The signature for the simulator for online planning
 
         Upon calling, produces a transition (state, observation, reward, terminal)
