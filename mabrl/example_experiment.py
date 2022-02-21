@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 import online_pomdp_planning.types as planner_types
 import pomdp_belief_tracking.types as belief_types
-from general_bayes_adaptive_pomdps.baddr.model import (
+from general_bayes_adaptive_pomdps.models.baddr import (
     BADDr,
     BADDrState,
     DynamicsModel,
@@ -16,7 +16,7 @@ from general_bayes_adaptive_pomdps.baddr.model import (
     train_from_samples,
 )
 from general_bayes_adaptive_pomdps.core import ActionSpace
-from general_bayes_adaptive_pomdps.domains import Domain
+from general_bayes_adaptive_pomdps.domains.domain import Domain
 from online_pomdp_planning.mcts import Policy
 from online_pomdp_planning.mcts import create_POUCT as lib_create_POUCT
 from online_pomdp_planning.mcts import create_rollout as lib_create_rollout

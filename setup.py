@@ -13,7 +13,7 @@ with open("HISTORY.rst") as history_file:
 requirements = [
     "online_pomdp_planning @ git+ssh://git@github.com/samkatt/online-pomdp-planning.git@master",
     "pomdp_belief_tracking @ git+ssh://git@github.com/samkatt/pomdp-belief-tracking.git@main",
-    "general_bayes_adaptive_pomdps @ git+ssh://git@github.com/samkatt/private-gbapomdp.git@main",
+    "general_bayes_adaptive_pomdps @ git+ssh://git@github.com/samkatt/private-gbapomdp.git@cb95226443dbec5e31ddb1ee2cce7607e96c0fe8",
     "numpy",
 ]
 
