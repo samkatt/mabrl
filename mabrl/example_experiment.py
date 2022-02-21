@@ -3,9 +3,12 @@ from collections import deque
 from functools import partial
 from typing import Any, Dict, List, Tuple
 
+import matplotlib.pyplot as plt
 import numpy as np
 import online_pomdp_planning.types as planner_types
 import pomdp_belief_tracking.types as belief_types
+from general_bayes_adaptive_pomdps.core import ActionSpace
+from general_bayes_adaptive_pomdps.domains.domain import Domain
 from general_bayes_adaptive_pomdps.models.baddr import (
     BADDr,
     BADDrState,
@@ -15,16 +18,13 @@ from general_bayes_adaptive_pomdps.models.baddr import (
     sample_transitions_uniform,
     train_from_samples,
 )
-from general_bayes_adaptive_pomdps.core import ActionSpace
-from general_bayes_adaptive_pomdps.domains.domain import Domain
 from online_pomdp_planning.mcts import Policy
 from online_pomdp_planning.mcts import create_POUCT as lib_create_POUCT
 from online_pomdp_planning.mcts import create_rollout as lib_create_rollout
 from pomdp_belief_tracking.pf import particle_filter as PF
 from pomdp_belief_tracking.pf import rejection_sampling as RS
-from mabrl.tiger3 import Tiger3
+
 from mabrl.RealDomain import RealDomain
-import matplotlib.pyplot as plt
 
 
 def main() -> None:
@@ -40,11 +40,11 @@ def main() -> None:
 
     # planning parameters
     num_particles = 128
-    #num_sims = 1024
+    # num_sims = 1024
     num_sims = 2048
-    #exploration_constant = 100
+    # exploration_constant = 100
     exploration_constant = 200
-    #planning_horizon = 5
+    # planning_horizon = 5
     planning_horizon = 30
 
     # learning parameters
@@ -52,11 +52,11 @@ def main() -> None:
     num_nets = 2
     learning_rate = 0.1
     online_learning_rate = 0.01
-    #num_epochs = 512
+    # num_epochs = 512
     num_epochs = 1024
-    #batch_size = 32
+    # batch_size = 32
     batch_size = 64
-    #network_size = 32
+    # network_size = 32
     network_size = 64
     dropout_rate = 0.1
 
@@ -101,16 +101,16 @@ def main() -> None:
                 num_epochs=num_epochs,
                 batch_size=batch_size,
             )
-            print("time: ", _, ", loss: ",loss)
+            print("time: ", _, ", loss: ", loss)
             y[_] += loss
-            #plt.plot(_,loss)
-            
-        #x = np.linspace(0,500,1)
-        x = np.linspace(0,1024,1024)
-        y = [i/2 for i in y]
-        plt.plot(x,y)
+            # plt.plot(_,loss)
+
+        # x = np.linspace(0,500,1)
+        x = np.linspace(0, 1024, 1024)
+        y = [i / 2 for i in y]
+        plt.plot(x, y)
         plt.show()
-        
+
         model.set_learning_rate(online_learning_rate)
 
     baddr = BADDr(
@@ -234,7 +234,7 @@ def run_episode(
             }
         )
 
-        #if step.terminal:
+        # if step.terminal:
         #    break
 
     return info

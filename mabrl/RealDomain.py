@@ -4,7 +4,6 @@ from logging import Logger
 from typing import List, Optional
 
 import numpy as np
-
 from general_bayes_adaptive_pomdps.core import (
     ActionSpace,
     DomainStepResult,
@@ -13,15 +12,17 @@ from general_bayes_adaptive_pomdps.core import (
 from general_bayes_adaptive_pomdps.domains import domain
 from general_bayes_adaptive_pomdps.misc import DiscreteSpace, LogLevel
 
+
 # 改造成三门
 class RealDomain(domain.Domain):
     """The actual domain"""
+
     # the rewards while human status completed
     STEP_REWARD = 10
     # the initial state reward equals to 0
     # We don't use one hot encode observation here
     # we set the termianl step here
-    #terminal_step = 150
+    # terminal_step = 150
     LOC = [0, 1]
     TOOL = [0, 1, 2]
     GOTOWORKROOM = 0
@@ -34,10 +35,16 @@ class RealDomain(domain.Domain):
     # robot action
     ACTION_TO_STRING = ["Go-to-WorkRoom", "Go-to-ToolRoom", "Pick-up", "Listen", "Drop"]
     # Working Status
-    STATUS_TO_STRING = ["Not Start", "First-Step", "Second-Step", "Third-Step", "Forth-Step"]
-    
+    STATUS_TO_STRING = [
+        "Not Start",
+        "First-Step",
+        "Second-Step",
+        "Third-Step",
+        "Forth-Step",
+    ]
+
     # We can thinking adding one human function to think about it.
-    
+
     def __init__(
         self,
         # one_hot_encode_observation: bool,
@@ -50,29 +57,28 @@ class RealDomain(domain.Domain):
         """
         # 可以假设正确的概率全部为0.85
         # observation: human working status;
-        
+
         if not correct_obs_probs:
             correct_obs_probs = [0.85]
-            
+
         # to ensure the probabilty in normal range
         assert (
             0 <= correct_obs_probs[0] <= 1
         ), f"observation prob {correct_obs_probs[0]} not a probability"
-    
-        
+
         # Logger 用法
         self._logger = Logger(self.__class__.__name__)
-        
+
         self._correct_obs_probs = correct_obs_probs
-        
+
         # self._use_one_hot_obs = one_hot_encode_observation
-        
+
         # state 包含机器人位置 [0,1], 人类工作状态 0 1 2 3 4, 四个工具的状态 1 2 3 4分别赋值为0 1 2 means 桌子上, 机器人上，送到了
         # state includes these feature with different values
         # 1. robot location [0: tool room, 1: work room]
         # 2. human working status: 0 1 2 3 4
         # 3. four tools' status: 0 -> on the table, 1-> with robot, 2-> delivered(drop)
-        self._state_space = DiscreteSpace([2,5,3,3,3,3])
+        self._state_space = DiscreteSpace([2, 5, 3, 3, 3, 3])
 
         # action在此处domain有四个动作，去workroom，去tool room，捡拾工具，listen
         # there are four actions, go-to-workroom, go-to-toolroom, pick-up, listen
@@ -86,13 +92,13 @@ class RealDomain(domain.Domain):
         self._obs_space = DiscreteSpace([6])
         # 采样出事状态
         self._state = self.sample_start_state()
-        
-    #可读
+
+    # 可读
     @property
     def state(self):
-        """ returns current state """
+        """returns current state"""
         return self._state
-    
+
     # state.setter
     # 转换为setter:可写
     @state.setter
@@ -109,27 +115,27 @@ class RealDomain(domain.Domain):
         # human workig status feature:0 1 2 3 4
         assert 5 > state[1] >= 0, f"{state} not valid"
         # four tool's status 0: tool room, 1: with robot 2: delivered
-        for i in range(2,6):
+        for i in range(2, 6):
             assert 3 > state[i] >= 0, f"{state} not valid"
-            
-        #print("initial state: ",state)
+
+        # print("initial state: ",state)
         self._state = state
-        
+
     @property
     def state_space(self) -> DiscreteSpace:
-        """ a `general_bayes_adaptive_pomdps.misc.DiscreteSpace` ([2]) space """
+        """a `general_bayes_adaptive_pomdps.misc.DiscreteSpace` ([2]) space"""
         return self._state_space
-    
+
     @property
     def action_space(self) -> ActionSpace:
-        """ a `general_bayes_adaptive_pomdps.core.ActionSpace` ([3]) space """
+        """a `general_bayes_adaptive_pomdps.core.ActionSpace` ([3]) space"""
         return self._action_space
-    
+
     @property
     def observation_space(self) -> DiscreteSpace:
-        """ a `general_bayes_adaptive_pomdps.misc.DiscreteSpace` ([1,1]) space if one-hot, otherwise [3]"""
+        """a `general_bayes_adaptive_pomdps.misc.DiscreteSpace` ([1,1]) space if one-hot, otherwise [3]"""
         return self._obs_space
-    
+
     # 编译观测
     def encode_observation(self, observation: int) -> np.ndarray:
         """encodes the observation for usage outside of `this`
@@ -141,8 +147,8 @@ class RealDomain(domain.Domain):
         RETURNS (`np.ndarray`):
         """
         # print(observation)
-        return np.array([observation],dtype=int)
-    
+        return np.array([observation], dtype=int)
+
     # 静态方法
     @staticmethod
     def sample_start_state() -> np.ndarray:
@@ -150,9 +156,9 @@ class RealDomain(domain.Domain):
         RETURNS (`np.narray`): an initial state (in [[0],[1]])
         """
         #
-        return np.array([0,0,0,0,0,0], dtype=int)
-    
-    #采样observation
+        return np.array([0, 0, 0, 0, 0, 0], dtype=int)
+
+    # 采样observation
     def sample_observation(self, loc: int, listening: bool) -> int:
         """samples an observation, listening stores whether agent is listening
         Args:
@@ -167,8 +173,12 @@ class RealDomain(domain.Domain):
         if loc == 4:
             return loc
         else:
-            return (loc if np.random.random() < self._correct_obs_probs[0] else np.random.randint(loc+1,5))
-    
+            return (
+                loc
+                if np.random.random() < self._correct_obs_probs[0]
+                else np.random.randint(loc + 1, 5)
+            )
+
     def reset(self) -> np.ndarray:
         """Resets internal state and return first observation
         Resets the internal state randomly ([0] or [1])
@@ -177,7 +187,7 @@ class RealDomain(domain.Domain):
         self._state = self.sample_start_state()
         # observation 存在null
         return self.encode_observation(self.LISTEN)
-    
+
     # 仿真步骤
     def simulation_step(self, state: np.ndarray, action: int) -> SimulationResult:
         """Simulates stepping from state using action. Returns interaction
@@ -197,7 +207,7 @@ class RealDomain(domain.Domain):
             obs = self.sample_observation(state[1], True)
         else:  # not opening door
             obs = self.sample_observation(state[1], False)
-            
+
         # to illustrate the effect of the action to the new state
         # [0 1 2 2 2 2]
         if action == self.GOTOWORKROOM:
@@ -207,49 +217,45 @@ class RealDomain(domain.Domain):
         if action == self.PICK:
             if state[0] == self.LOC[0]:
                 for i in range(2, 6):
-                # only pick one tool a time
+                    # only pick one tool a time
                     if new_state[i] == self.TOOL[0]:
                         new_state[i] = self.TOOL[1]
                         break
             else:
                 for i in range(2, 6):
-                # only pick one tool a time
+                    # only pick one tool a time
                     if new_state[i] == self.TOOL[2]:
                         new_state[i] = self.TOOL[1]
                         break
-        
+
         # drop
         if action == self.DROP:
             if state[0] == self.LOC[1]:
                 for i in range(2, 6):
-                # only drop one tool a time
+                    # only drop one tool a time
                     if new_state[i] == self.TOOL[1]:
                         new_state[i] = self.TOOL[2]
                         break
             else:
                 for i in range(2, 6):
-                # only drop one tool a time
+                    # only drop one tool a time
                     if new_state[i] == self.TOOL[1]:
                         new_state[i] = self.TOOL[0]
                         break
-        
-        
-            
+
         # here we can set a probability to change the human's current working status
         # 0 1 2 3 4 -> loc + status + [1 2 3 4]
         a = new_state[1]
-        if new_state[1] < 4 and new_state[a+2] == self.TOOL[2]:
+        if new_state[1] < 4 and new_state[a + 2] == self.TOOL[2]:
             new_state[1] += 1
             a += 1
-            
 
-        
         return SimulationResult(new_state, self.encode_observation(obs))
-    
-# reward
-# here for the reward, we just focus on the human working status changes and the time interval between changes
-# my episodes is to reduce some interval values as the punishment
-    
+
+    # reward
+    # here for the reward, we just focus on the human working status changes and the time interval between changes
+    # my episodes is to reduce some interval values as the punishment
+
     def reward(self, state: np.ndarray, action: int, new_state: np.ndarray) -> float:
         """A constant if listening, penalty if opening to door, and reward otherwise
         Args:
@@ -258,18 +264,18 @@ class RealDomain(domain.Domain):
              new_state: (`np.ndarray`):
         RETURNS (`float`):
         """
-        #print("old state: ",state)
+        # print("old state: ",state)
         # here we need to focus on the change of the human status between new state and old state
         # we just need to focus on the human assembling task this time.
         assert self.state_space.contains(state), f"{state} not in space"
         assert self.action_space.contains(action), f"{action} not in space"
         assert self.state_space.contains(new_state), f"{new_state} not in space"
-        
+
         # Or we can Just add something like gaussian sampling here
         # then there are values < 0 appears
-        #print("new state: ",new_state)
-        return (self.STEP_REWARD) * (new_state[1]-state[1])
-    
+        # print("new state: ",new_state)
+        return (self.STEP_REWARD) * (new_state[1] - state[1])
+
     # 中止指令
     def terminal(self, state: np.ndarray, action: int, new_state: np.ndarray) -> bool:
         """True if opening a door
@@ -283,9 +289,8 @@ class RealDomain(domain.Domain):
         assert self.state_space.contains(state), f"{state} not in space"
         assert self.state_space.contains(new_state), f"{new_state} not in space"
         assert self.action_space.contains(action), f"{action} not in space"
-        
-        return bool(action != self.LISTEN)
 
+        return bool(action != self.LISTEN)
 
     def step(self, action: int) -> DomainStepResult:
         """Performs a step in the tiger problem given action
@@ -295,9 +300,9 @@ class RealDomain(domain.Domain):
              action: (`int`): 0 is open left, 1 is open right or 2 is listen
         RETURNS (`general_bayes_adaptive_pomdps.core.EnvironmentInteraction`): the transition
         """
-        
+
         sim_result = self.simulation_step(self.state, action)
-        #print("Observation: ",sim_result.observation)
+        # print("Observation: ",sim_result.observation)
         reward = self.reward(self.state, action, sim_result.state)
         terminal = self.terminal(self.state, action, sim_result.state)
         # only observation not false, then we can present what it hears
@@ -309,15 +314,15 @@ class RealDomain(domain.Domain):
                 )
             else:  # agent is opening door
                 descr = f"the agent takes {self.ACTION_TO_STRING[action]} ({reward})"
-            
+
             self._logger.log(
                 LogLevel.V2.value,
                 f"With agent {self.ELEM_TO_STRING[self.state[0]]}, {descr}",
             )
         self.state = sim_result.state
-        
+
         return DomainStepResult(sim_result.observation, reward, terminal)
-    
+
     # 观察到index, since it don't use one_hot_encoding then we just return the observation
     def obs2index(self, observation: np.ndarray) -> np.ndarray:
         """projects the observation as an int
@@ -325,18 +330,13 @@ class RealDomain(domain.Domain):
              observation: (`np.ndarray`): observation to project
         RETURNS (`int`): int representation of observation
         """
-        
+
         assert self.observation_space.contains(
             observation
         ), f"{observation} not in space"
-        
+
         return int(observation.tolist()[0])
 
-    
     def __repr__(self) -> str:
         encoding_descr = "default"
         return f"Real domain problem ({encoding_descr} encoding) with obs prob {self._correct_obs_probs}"
-    
-    
-    
-    
