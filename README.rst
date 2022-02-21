@@ -10,11 +10,12 @@ Install
 
 To install this project locally, simply use the setup:
 
-```
-python -m pip install -e .
-```
+.. code-block:: shell
+
+    >>> python -m pip install -e .
 
 Note that some dev tools can be separately installed via the requirements:
 
-```
-python -m pip -r requirements_dev.txt
+.. code-block:: shell
+
+    >>> python -m pip -r requirements_dev.txt
